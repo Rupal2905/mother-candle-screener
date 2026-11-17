@@ -1,0 +1,11 @@
+.venv/
+.cache/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+mother_inside_nse_fo_*.csv
+mother_inside_upstox_nse_*.csv
+pytest-of-*/
+.vscode/
+.env
+.streamlit/secrets.toml
