@@ -20,6 +20,7 @@ from .calendar import (
     intraday_gap_reason,
     now_ist,
     session_overrides_from_env,
+    to_ist_index,
     trim_after_unverified_weekday_gap,
 )
 from .models import Instrument, Timeframe
@@ -328,6 +329,12 @@ def prepare_timeframe(
             prepared.attrs["continuity_warning"] = warning
         return prepared, None
     if timeframe.calendar_period:
+        if data_cutoff is None:
+            # In a live scan, a forming weekly/monthly bar must participate so
+            # an intraperiod close outside a mother range invalidates the row
+            # immediately. Historical scans retain completed-only behavior.
+            current = to_ist_index(frame)
+            return current.loc[current.index <= pd.Timestamp(now_ist())], None
         return completed_calendar_period_bars(frame, timeframe.calendar_period, as_of=as_of, session_overrides=overrides), None
     if timeframe.aggregate:
         return aggregate_completed_monthly(
@@ -336,5 +343,6 @@ def prepare_timeframe(
             as_of=as_of,
             session_overrides=overrides,
             require_complete_period=data_cutoff is not None,
+            include_incomplete_month=data_cutoff is None,
         ), None
     return frame, None

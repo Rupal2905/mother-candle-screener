@@ -116,8 +116,9 @@ def aggregate_completed_monthly(
     as_of: datetime | None = None,
     session_overrides: dict[str, object] | None = None,
     require_complete_period: bool = False,
+    include_incomplete_month: bool = False,
 ) -> pd.DataFrame:
-    monthly = completed_calendar_period_bars(frame, "month", as_of, session_overrides)
+    monthly = to_ist_index(frame) if include_incomplete_month else completed_calendar_period_bars(frame, "month", as_of, session_overrides)
     if monthly.empty:
         return monthly
     if rule == "2QE-DEC":
@@ -132,7 +133,8 @@ def aggregate_completed_monthly(
             month = 12 if half else 6
             labels.append(pd.Timestamp(year=int(year), month=month, day=1, tz=IST) + pd.offsets.MonthEnd(0))
             rows.append({"Open": group["Open"].iloc[0], "High": group["High"].max(), "Low": group["Low"].min(), "Close": group["Close"].iloc[-1]})
-        return pd.DataFrame(rows, index=pd.DatetimeIndex(labels)).sort_index()
+        result = pd.DataFrame(rows, index=pd.DatetimeIndex(labels)).sort_index()
+        return _label_current_aggregate_with_source_timestamp(result, monthly, as_of) if include_incomplete_month else result
     result = monthly[["Open", "High", "Low", "Close"]].resample(rule, label="right", closed="right").agg(
         {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
     ).dropna()
@@ -140,7 +142,26 @@ def aggregate_completed_monthly(
         expected_months = 3 if rule == "QE-DEC" else 12
         counts = monthly.resample(rule, label="right", closed="right").size()
         result = result.loc[result.index.isin(counts[counts == expected_months].index)]
-    return result
+    return _label_current_aggregate_with_source_timestamp(result, monthly, as_of) if include_incomplete_month else result
+
+
+def _label_current_aggregate_with_source_timestamp(
+    aggregate: pd.DataFrame,
+    monthly: pd.DataFrame,
+    as_of: datetime | None,
+) -> pd.DataFrame:
+    """Avoid presenting a forming higher-period candle as a future timestamp."""
+    if aggregate.empty or monthly.empty:
+        return aggregate
+    cutoff = pd.Timestamp(as_of or now_ist())
+    cutoff = cutoff.tz_localize(IST) if cutoff.tzinfo is None else cutoff.tz_convert(IST)
+    if aggregate.index[-1] <= cutoff:
+        return aggregate
+    result = aggregate.copy()
+    labels = result.index.to_list()
+    labels[-1] = monthly.index[-1]
+    result.index = pd.DatetimeIndex(labels)
+    return result.sort_index()
 
 
 def intraday_gap_reason(frame: pd.DataFrame, interval_minutes: int) -> str | None:

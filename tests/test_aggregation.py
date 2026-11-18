@@ -9,9 +9,10 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 def monthly_frame(dates):
+    opens = [10 * (index + 1) for index in range(len(dates))]
     return pd.DataFrame(
-        {"Open": [10, 20, 30, 40, 50, 60, 70], "High": [12, 22, 32, 42, 52, 62, 72],
-         "Low": [9, 19, 29, 39, 49, 59, 69], "Close": [11, 21, 31, 41, 51, 61, 71]},
+        {"Open": opens, "High": [value + 2 for value in opens],
+         "Low": [value - 1 for value in opens], "Close": [value + 1 for value in opens]},
         index=pd.DatetimeIndex(dates, tz=IST),
     )
 
@@ -33,3 +34,15 @@ def test_half_yearly_and_yearly_use_completed_monthly_ohlc():
     year = aggregate_completed_monthly(source, "YE-DEC", as_of)
     assert tuple(half.iloc[-1]) == (10, 62, 9, 61)
     assert tuple(year.iloc[-1]) == (10, 62, 9, 61)
+
+
+def test_current_higher_period_aggregation_includes_forming_month_without_future_label():
+    source = monthly_frame(["2026-01-01", "2026-02-01", "2026-03-01", "2026-04-01"])
+    current = aggregate_completed_monthly(
+        source,
+        "QE-DEC",
+        datetime(2026, 4, 15, 12, 0, tzinfo=IST),
+        include_incomplete_month=True,
+    )
+    assert tuple(current.iloc[-1]) == (40, 42, 39, 41)
+    assert current.index[-1] == pd.Timestamp("2026-04-01", tz=IST)
